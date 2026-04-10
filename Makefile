@@ -12,4 +12,4 @@ build: $(src)
 .PHONY: update
 update: build
 	./$(bin) my-sites.lst > my-sites-$(ts).json
-	@echo "OK. Now import a new my-sites.json in the client."
+	@echo "OK. Now import a new my-sites-$(ts).json in the client."

@@ -1,6 +1,9 @@
 # Domain to IP Address List Converter
 
-AmneziaWG is an improved version of the WireGuard protocol, commonly used by AmneziaVPN clients. However, the AmneziaVPN UI is limited when you need to frequently adjust your network traffic routing. This tool converts a plain-text file of domains into a JSON IP address list that can be imported into the AmneziaVPN client for site-based split tunneling.
+AmneziaWG is an improved version of the WireGuard protocol, commonly used by AmneziaVPN clients.
+However, the AmneziaVPN UI is limited when you need to frequently adjust your network traffic
+routing. This tool converts a plain-text file of endpoints (domains and CIDR addresses) into a JSON
+IP address list that can be imported into the AmneziaVPN client for site-based split tunneling.
 
 ## TL;DR
 
@@ -15,11 +18,16 @@ AmneziaWG is an improved version of the WireGuard protocol, commonly used by Amn
 
 ## Why?
 
-The AmneziaVPN interface is inconvenient for adding, removing, and updating endpoints used for site-based split tunneling. This tool improves several aspects:
+The AmneziaVPN interface is inconvenient for adding, removing, and updating endpoints used for
+site-based split tunneling. This tool improves several aspects:
 
-- **(Nearly) complete domain name resolution**: When you save a domain name in the client, it is sometimes resolved to a single IP address, ignoring possible load balancers that implement Round Robin or other rotation methods. This causes frequent VPN tunnel misses. This tool performs multiple consecutive lookups to capture all IP addresses.
-- **Organize endpoints into sets and document them with comments**: You can easily enable/disable a partucular resource by commenting out several lines containing domains and/or IP addresses.
-- **IaC support**: The domain list is a plain-text file that can be stored in a VCS.
+- **(Nearly) complete domain name resolution**: When you save a domain name in the client, it is
+  sometimes resolved to a single IP address, ignoring possible load balancers that implement Round
+  Robin or other rotation methods. This causes frequent VPN tunnel misses. This tool performs
+  multiple consecutive lookups to capture all IP addresses.
+- **Organize endpoints into sets and document them with comments**: You can easily enable/disable a
+  partucular resource by commenting out several lines containing domains and/or CIDR addresses.
+- **IaC support**: The endpoint list is a plain-text file that can be stored in a VCS.
 
 ## Input file syntax example
 
@@ -28,6 +36,10 @@ The AmneziaVPN interface is inconvenient for adding, removing, and updating endp
 
 site1.com
 site2.com www.site2.com cnd1-for-site.org # this is an inline comment
+
+# CIDR-formatted IP address ranges are also fine:
+1.2.3.4/20
+8.8.4.4/32
 
 # this is a comment also; empty lines are also ignored
 site3.org

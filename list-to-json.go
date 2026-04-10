@@ -31,10 +31,10 @@ func isSpace(c byte) bool {
 
 // Some sites return different sets of IPs among lookup calls (due to load balancing,  etc.).
 // We make multiple lookup iterations to collect most/all of them.
-const lookupIterations = 4
+const lookupIterations = 6
 
 // Sleep period in ms between consequent lookups.
-const sleepBetweenLookupsMs = 5 * time.Millisecond
+const sleepBetweenLookupsMs = 100 * time.Millisecond
 
 // Parse plain-text file with domain names.
 // - domains are space-/newline-separated
@@ -145,10 +145,7 @@ func processIps(wg *sync.WaitGroup, ipsCh <-chan string) {
 
 	entries := []Entry{}
 	for _, ip := range ips {
-		entries = append(entries, Entry{
-			Host: ip + "/32",
-			Ip:   "",
-		})
+		entries = append(entries, Entry{Host: ip, Ip: ""})
 	}
 
 	js, err := json.MarshalIndent(entries, "", "  ")
@@ -169,7 +166,36 @@ func skipIP(ip string) bool {
 	return ip == "0.0.0.0" || strings.HasPrefix(ip, "127.") || strings.HasPrefix(ip, "169.254.")
 }
 
-func lookup(wg *sync.WaitGroup, id int, domainsCh <-chan string, ipsCh chan<- string) {
+func lookupDomain(ctx context.Context, threadId int, rs *net.Resolver, domain string) []string {
+	ips := map[string]bool{}
+	for range lookupIterations {
+		ipsRaw, err := rs.LookupIP(ctx, "ip4", domain)
+		//log.Println("processing domain", domain)
+		if err != nil {
+			log.Printf("worker %v: Domain lookup failed for %v : %v", threadId, domain, err)
+			break
+		}
+
+		for _, ip := range ipsRaw {
+			ipStr := ip.String()
+			if skipIP(ipStr) {
+				log.Printf("Waning: domain %v resolved into suspicious IP %v", domain, ipStr)
+				continue
+			}
+			ips[ipStr] = true
+		}
+		time.Sleep(sleepBetweenLookupsMs)
+	}
+
+	ipsArr := []string{}
+	for ip := range ips {
+		ipsArr = append(ipsArr, ip+"/32")
+	}
+	slices.Sort(ipsArr)
+	return ipsArr
+}
+
+func lookupAll(wg *sync.WaitGroup, id int, domainsCh <-chan string, ipsCh chan<- string) {
 	defer wg.Done()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -178,36 +204,17 @@ func lookup(wg *sync.WaitGroup, id int, domainsCh <-chan string, ipsCh chan<- st
 	rs := &net.Resolver{PreferGo: true}
 
 	for domain := range domainsCh {
-		ips := map[string]bool{}
-
-		for range lookupIterations {
-			ipsRaw, err := rs.LookupIP(ctx, "ip4", domain)
-			//log.Println("processing domain", domain)
-			if err != nil {
-				log.Printf("worker %v: Domain lookup failed for %v : %v", id, domain, err)
-				break
-			}
-
-			for _, ip := range ipsRaw {
-				ipStr := ip.String()
-				if skipIP(ipStr) {
-					log.Printf("Waning: domain %v resolved into suspicious IP %v", domain, ipStr)
-					continue
-				}
-				ips[ipStr] = true
-			}
-			time.Sleep(sleepBetweenLookupsMs)
+		ips := []string{}
+		// if domain if an IP address range, add it immediately:
+		if _, _, err := net.ParseCIDR(domain); err == nil {
+			ips = append(ips, domain)
+			log.Printf("single IP range added: %s", domain)
+		} else { // perform DNS lookups
+			ips = append(ips, lookupDomain(ctx, id, rs, domain)...)
+			log.Printf("IPs for domain %v: %v", domain, ips)
 		}
 
-		ipsArr := []string{}
-		for ip := range ips {
-			ipsArr = append(ipsArr, ip)
-		}
-		slices.Sort(ipsArr)
-
-		log.Printf("IPs for domain %v: %v", domain, ipsArr)
-
-		for _, ip := range ipsArr {
+		for _, ip := range ips {
 			ipsCh <- ip
 		}
 	}
@@ -231,9 +238,9 @@ func main() {
 	wg1.Add(1)
 
 	// read domains from channel, resolve IPs, and write results to another channel
-	maxWorkers := 10
+	maxWorkers := 20
 	for i := range maxWorkers {
-		go lookup(&wg1, i, domainsCh, ipsCh)
+		go lookupAll(&wg1, i, domainsCh, ipsCh)
 		wg1.Add(1)
 	}
 
